@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Aguardando Adversário</title>
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin-top: 80px;
+    }
+    #mensagem {
+      font-size: 24px;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <h2 id="mensagem">Aguardando adversário...</h2>
+
+  <script>
+    const socket = io("http://localhost:5000"); // Porta onde o servidor Flask está rodando
+    const jogador1_id = parseInt(localStorage.getItem("jogador_id")); // Deve estar salvo no localStorage após login
+    console.log("Jogador 1 ID:", jogador1_id);
+
+    socket.on("jogador_pronto", (data) => {
+      console.log("Evento recebido:", data);
+
+      if (jogador1_id === data.turno) {
+        document.getElementById("mensagem").textContent = "Sua vez de jogar! Redirecionando...";
+        setTimeout(() => {
+          window.location.href = "/jogo.html?partida_id=" + data.partida_id; // Redireciona para a tela do jogo
+        }, 2000);
+      }
+    });
+  </script>
+</body>
+</html>

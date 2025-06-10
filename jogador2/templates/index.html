@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Batalha Naval - Jogador 2</title>
+    <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
+    <style>
+        table { border-collapse: collapse; }
+        td {
+            width: 30px;
+            height: 30px;
+            text-align: center;
+            vertical-align: middle;
+            border: 1px solid #000;
+            cursor: pointer;
+        }
+        .agua { background-color: lightblue; }
+        .navio { background-color: gray; }
+        .acerto { background-color: red; }
+        .erro { background-color: white; }
+    </style>
+</head>
+<body>
+    <h1>Batalha Naval - Jogador 2</h1>
+    <h3>Status: <span id="status">Aguardando...</span></h3>
+    <table id="tabuleiro"></table>
+
+    <script>
+        const socket = io('http://localhost:5000');  // ← endereço do servidor mestre
+        let jogador_id = 2;
+        let partida_id = 1; // ajuste conforme a partida criada
+
+        const tabuleiro = document.getElementById('tabuleiro');
+        const statusSpan = document.getElementById('status');
+
+        for (let i = 0; i < 10; i++) {
+            const linha = tabuleiro.insertRow();
+            for (let j = 0; j < 10; j++) {
+                const celula = linha.insertCell();
+                celula.classList.add('agua');
+                celula.dataset.linha = i;
+                celula.dataset.coluna = j;
+                celula.addEventListener('click', () => {
+                    fetch('http://localhost:5000/jogada', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            partida_id: partida_id,
+                            jogador_id: jogador_id,
+                            linha: i,
+                            coluna: j,
+                            ordem: 2 // ← ordem correta do jogador 2
+                        })
+                    })
+                    .then(resp => resp.json())
+                    .then(data => {
+                        if (data.resultado === 'acertou') {
+                            celula.classList.remove('agua');
+                            celula.classList.add('acerto');
+                        } else {
+                            celula.classList.remove('agua');
+                            celula.classList.add('erro');
+                        }
+                        statusSpan.textContent = data.mensagem;
+                    });
+                });
+            }
+        }
+
+        socket.on('atualizar_tabuleiro', data => {
+            const { linha, coluna, resultado } = data;
+            const celula = tabuleiro.rows[linha].cells[coluna];
+            if (resultado === 'acertou') {
+                celula.classList.remove('agua');
+                celula.classList.add('acerto');
+            } else {
+                celula.classList.remove('agua');
+                celula.classList.add('erro');
+            }
+        });
+
+        socket.on('mensagem', msg => {
+            statusSpan.textContent = msg;
+        });
+    </script>
+</body>
+</html>

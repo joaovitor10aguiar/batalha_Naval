@@ -78,21 +78,16 @@ def login_ou_cadastrar_jogador(nome, usuario):
         return jogador_id
 
 def criar_partida(jogador1_id, jogador2_id):
-    try:
-        conn = conectar()
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO partida (jogador1_id, jogador2_id, turno_atual) VALUES (?, ?, ?)",
-            (jogador1_id, jogador2_id, jogador1_id)
-        )
-        conn.commit()
-        partida_id = cursor.lastrowid
-        return partida_id
-    except Exception as e:
-        print("Erro ao criar partida:", e)
-        raise
-    finally:
-        conn.close()
+    conn = conectar()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO partida (jogador1_id, jogador2_id, turno_atual) VALUES (?, ?, ?)",
+        (jogador1_id, jogador2_id, jogador1_id)
+    )
+    conn.commit()
+    partida_id = cursor.lastrowid
+    conn.close()
+    return partida_id
 
 def registrar_navios(jogador_id, partida_id, posicoes):
     conn = conectar()
@@ -100,11 +95,12 @@ def registrar_navios(jogador_id, partida_id, posicoes):
     for pos in posicoes:
         linha = pos["linha"]
         coluna = pos["coluna"]
-        cursor.execute("INSERT INTO navio (jogador_id, partida_id, linha, coluna) VALUES (?, ?, ?, ?)",
-                       (jogador_id, partida_id, linha, coluna))
+        cursor.execute(
+            "INSERT INTO navio (jogador_id, partida_id, linha, coluna) VALUES (?, ?, ?, ?)",
+            (jogador_id, partida_id, linha, coluna)
+        )
     conn.commit()
     conn.close()
-
 
 def verificar_jogada_duplicada(partida_id, linha, coluna):
     conn = conectar()
@@ -117,29 +113,28 @@ def verificar_jogada_duplicada(partida_id, linha, coluna):
     conn.close()
     return resultado > 0
 
-def alternar_turno(partida_id):
-    conn = conectar()
-    cursor = conn.cursor()
-    cursor.execute("SELECT jogador1_id, jogador2_id, turno_atual FROM partida WHERE id = ?", (partida_id,))
-    partida = cursor.fetchone()
-    novo_turno = partida[1] if partida[2] == partida[0] else partida[0]
-    cursor.execute("UPDATE partida SET turno_atual = ? WHERE id = ?", (novo_turno, partida_id))
-    conn.commit()
-    conn.close()
-
 def registrar_jogada(partida_id, jogador_id, linha, coluna, ordem):
-    if verificar_jogada_duplicada(partida_id, linha, coluna):
-        return {"erro": "Esta posição já foi jogada. Escolha outra."}
-
     conn = conectar()
     cursor = conn.cursor()
+
+    # Verifica turno atual
+    cursor.execute("SELECT turno_atual FROM partida WHERE id = ?", (partida_id,))
+    turno_atual = cursor.fetchone()[0]
+    if turno_atual != jogador_id:
+        conn.close()
+        return {"erro": "Não é o turno desse jogador"}
+
+    if verificar_jogada_duplicada(partida_id, linha, coluna):
+        conn.close()
+        return {"erro": "Esta posição já foi jogada. Escolha outra."}
 
     cursor.execute("SELECT jogador1_id, jogador2_id FROM partida WHERE id = ?", (partida_id,))
     p = cursor.fetchone()
     oponente_id = p[1] if jogador_id == p[0] else p[0]
 
     cursor.execute("""
-        SELECT id FROM navio WHERE partida_id = ? AND jogador_id = ? AND linha = ? AND coluna = ? AND atingido = 0
+        SELECT id FROM navio 
+        WHERE partida_id = ? AND jogador_id = ? AND linha = ? AND coluna = ? AND atingido = 0
     """, (partida_id, oponente_id, linha, coluna))
     navio = cursor.fetchone()
 
@@ -153,15 +148,14 @@ def registrar_jogada(partida_id, jogador_id, linha, coluna, ordem):
         VALUES (?, ?, ?, ?, ?, ?)
     """, (partida_id, jogador_id, linha, coluna, ordem, acerto))
 
-    conn.commit()
-
     vitoria = verificar_vitoria(partida_id, oponente_id)
     if vitoria:
         atualizar_vencedor(partida_id, jogador_id)
+        conn.commit()
         conn.close()
         return {"mensagem": f"Jogada registrada. Vitória do jogador {jogador_id}!", "acerto": acerto}
 
-    alternar_turno(partida_id)
+    conn.commit()
     conn.close()
     return {"mensagem": "Jogada registrada com sucesso.", "acerto": acerto}
 
@@ -169,7 +163,8 @@ def verificar_vitoria(partida_id, oponente_id):
     conn = conectar()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT COUNT(*) FROM navio WHERE partida_id = ? AND jogador_id = ? AND atingido = 0
+        SELECT COUNT(*) FROM navio 
+        WHERE partida_id = ? AND jogador_id = ? AND atingido = 0
     """, (partida_id, oponente_id))
     restante = cursor.fetchone()[0]
     conn.close()

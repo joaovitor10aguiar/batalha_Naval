@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
-from flask_socketio import SocketIO
+from flask_socketio import SocketIO, emit
+from flask_cors import CORS
 import sqlite3
 from database import conectar
 from database import (
@@ -12,11 +13,17 @@ from database import (
 )
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
+CORS(app, resources={r"/*": {"origins": [
+    "http://127.0.0.1:5001",
+    "http://127.0.0.1:5002"
+]}})
+socketio = SocketIO(app, cors_allowed_origins=[
+    "http://127.0.0.1:5001",
+    "http://127.0.0.1:5002"
+])
 
 turnos = {}
 
-# Criação das tabelas ao iniciar
 criar_tabelas()
 
 @app.route("/login", methods=["POST"])
@@ -33,7 +40,24 @@ def nova_partida():
     jogador1_id = dados.get("jogador1_id")
     jogador2_id = dados.get("jogador2_id")
     partida_id = criar_partida(jogador1_id, jogador2_id)
+
+    conn = conectar()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE partida SET turno_atual = ? WHERE id = ?", (jogador1_id, partida_id))
+    conn.commit()
+    conn.close()
+
     turnos[partida_id] = jogador1_id
+    print(f"[DEBUG] Partida {partida_id} iniciada. Primeiro turno: Jogador {jogador1_id}")
+
+    # Emitir notificação para ambos os jogadores que a partida iniciou
+    socketio.emit("jogador_pronto", {
+        "partida_id": partida_id,
+        "jogador1_id": jogador1_id,
+        "jogador2_id": jogador2_id,
+        "turno": jogador1_id
+    })
+
     return jsonify({"partida_id": partida_id})
 
 @app.route("/registrar_navios", methods=["POST"])
@@ -41,16 +65,26 @@ def registrar_navios_rota():
     dados = request.get_json()
     jogador_id = dados["jogador_id"]
     partida_id = dados["partida_id"]
-    posicoes = dados["posicoes"]  # lista de pares [linha, coluna]
+    posicoes = dados["posicoes"]
     registrar_navios(jogador_id, partida_id, posicoes)
     return jsonify({"mensagem": "Navios posicionados com sucesso"})
 
-def verificar_turno(partida_id, jogador_id, turnos):
+def verificar_turno(partida_id, jogador_id):
     return turnos.get(partida_id) == jogador_id
 
-def alternar_turno(partida_id, jogador1_id, jogador2_id):
-    atual = turnos.get(partida_id)
-    turnos[partida_id] = jogador2_id if atual == jogador1_id else jogador1_id
+def alternar_turno(partida_id):
+    conn = conectar()
+    cursor = conn.cursor()
+    cursor.execute("SELECT jogador1_id, jogador2_id, turno_atual FROM partida WHERE id = ?", (partida_id,))
+    partida = cursor.fetchone()
+    if not partida:
+        conn.close()
+        return
+    novo_turno = partida[1] if partida[2] == partida[0] else partida[0]
+    cursor.execute("UPDATE partida SET turno_atual = ? WHERE id = ?", (novo_turno, partida_id))
+    conn.commit()
+    conn.close()
+    turnos[partida_id] = novo_turno
 
 @app.route("/jogada", methods=["POST"])
 def jogada():
@@ -59,33 +93,21 @@ def jogada():
     jogador_id = dados["jogador_id"]
     linha = dados["linha"]
     coluna = dados["coluna"]
-    ordem = dados["ordem"]
+    ordem = dados.get("ordem", 1)
 
-    # Verificar turno
-    if not verificar_turno(partida_id, jogador_id, turnos):
+    if not verificar_turno(partida_id, jogador_id):
         return jsonify({"erro": "Não é o turno desse jogador"}), 403
 
     resultado = registrar_jogada(partida_id, jogador_id, linha, coluna, ordem)
 
-    # Alternar turno apenas se a jogada for válida
     if "erro" not in resultado:
-        # Buscar os jogadores para alternar corretamente
-        conn = conectar()
-        cursor = conn.cursor()
-        cursor.execute("SELECT jogador1_id, jogador2_id FROM partida WHERE id = ?", (partida_id,))
-        jogador1_id, jogador2_id = cursor.fetchone()
-        conn.close()
-
-        alternar_turno(partida_id, jogador1_id, jogador2_id)
-
-        socketio.emit("nova_jogada", {
-            "partida_id": partida_id,
-            "jogador_id": jogador_id,
+        alternar_turno(partida_id)
+        socketio.emit("atualizar_tabuleiro", {
             "linha": linha,
             "coluna": coluna,
-            "ordem": ordem,
-            "acerto": resultado.get("acerto", False)
+            "resultado": "acertou" if resultado.get("acerto") else "errou"
         })
+        socketio.emit("mensagem", resultado["mensagem"])
 
     return jsonify(resultado)
 
@@ -99,10 +121,13 @@ def carregar_turnos():
     cursor = conn.cursor()
     cursor.execute("SELECT id, turno_atual FROM partida")
     for partida_id, turno in cursor.fetchall():
-        turnos[partida_id] = turno
+        if turno:
+            turnos[partida_id] = turno
     conn.close()
 
 carregar_turnos()
 
 if __name__ == "__main__":
+    carregar_turnos()
+    print(f"[DEBUG] Turnos carregados do banco: {turnos}")
     socketio.run(app, debug=True)

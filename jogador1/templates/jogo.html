@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Batalha Naval</title>
+    <style>
+        table { border-collapse: collapse; }
+        td {
+            width: 30px;
+            height: 30px;
+            text-align: center;
+            border: 1px solid black;
+        }
+        .agua { background-color: lightblue; }
+        .acerto { background-color: red; }
+        .erro { background-color: white; }
+    </style>
+</head>
+<body>
+    <h1>Batalha Naval - Jogador {{ jogador_id }}</h1>
+    <h2 id="mensagem">Status: Aguardando...</h2>
+
+    <table id="tabuleiro"></table>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+<script>
+    const jogador_id = Number("{{ jogador_id }}");
+    const partida_id = Number("{{ partida_id }}");
+
+    const socket = io("http://localhost:5000");
+
+    const tabuleiro = document.getElementById("tabuleiro");
+    const mensagemEl = document.getElementById("mensagem");
+
+    // Cria o tabuleiro
+    for (let i = 0; i < 10; i++) {
+        const linha = tabuleiro.insertRow();
+        for (let j = 0; j < 10; j++) {
+            const celula = linha.insertCell();
+            celula.classList.add("agua");
+            celula.dataset.linha = i;
+            celula.dataset.coluna = j;
+
+            celula.addEventListener("click", () => {
+                fetch("http://localhost:5000/jogada", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ partida_id, jogador_id, linha: i, coluna: j })
+                })
+                .then(res => {
+                    if (!res.ok) {
+                        return res.json().then(data => { throw new Error(data.erro); });
+                    }
+                    return res.json();
+                })
+                .then(data => {
+                    mensagemEl.textContent = data.mensagem;
+                })
+                .catch(error => alert(error.message));
+            });
+        }
+    }
+
+    socket.on("atualizar_tabuleiro", data => {
+        const celula = tabuleiro.rows[data.linha].cells[data.coluna];
+        celula.classList.add(data.resultado === "acertou" ? "acerto" : "erro");
+    });
+
+    socket.on("mensagem", msg => {
+        mensagemEl.textContent = msg;
+    });
+
+    // Verifica o turno ao carregar
+    socket.emit("verificar_turno", { partida_id, jogador_id });
+</script>

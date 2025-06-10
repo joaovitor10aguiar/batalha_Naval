@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Registro - Jogador 2</title>
+</head>
+<body>
+    <h1>Registro - Jogador 2</h1>
+    <form id="registro-form">
+        <label>Nome:</label>
+        <input type="text" name="nome" required><br><br>
+
+        <label>Usuário:</label>
+        <input type="text" name="usuario" required><br><br>
+
+        <button type="submit">Registrar</button>
+    </form>
+
+    <script>
+        // Use o mesmo hostname do frontend para evitar problemas de CORS
+        const BASE_URL = "http://127.0.0.1:5000";
+
+        document.getElementById("registro-form").addEventListener("submit", async function(e) {
+            e.preventDefault();
+            const nome = e.target.nome.value;
+            const usuario = e.target.usuario.value;
+
+            try {
+                const response = await fetch(`${BASE_URL}/login`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ nome, usuario })
+                });
+
+                if (!response.ok) {
+                    throw new Error("Falha ao registrar jogador");
+                }
+
+                const data = await response.json();
+                const jogador2_id = data.jogador_id;
+                localStorage.setItem("jogador2_id", jogador2_id);
+
+                const jogador1_id = parseInt(prompt("Digite o ID do jogador 1 para iniciar a partida:"));
+
+                const partidaRes = await fetch(`${BASE_URL}/nova_partida`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ jogador1_id, jogador2_id })
+                });
+
+                if (!partidaRes.ok) {
+                    throw new Error("Falha ao criar partida");
+                }
+
+                const partidaData = await partidaRes.json();
+                const partida_id = partidaData.partida_id;
+
+                // Redireciona para o posicionamento
+                window.location.href = `/posicionar/${jogador2_id}?partida_id=${partida_id}`;
+
+            } catch (error) {
+                console.error("Erro ao registrar jogador:", error);
+                alert("Erro ao registrar jogador.");
+            }
+        });
+    </script>
+</body>
+</html>
